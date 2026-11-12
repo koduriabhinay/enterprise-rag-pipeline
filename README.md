@@ -1,8 +1,8 @@
 # Enterprise RAG Pipeline
 
-A production-style retrieval-augmented generation pipeline over enterprise documents, built to run fully offline with zero API keys and no heavy ML dependencies. It answers questions from a corpus of company policies with cited sources, guarded by PII redaction and prompt-injection screening.
+A retrieval-augmented generation pipeline over internal company documents. It answers questions from a set of policy documents with cited sources, applies PII redaction and prompt-injection screening, and runs offline with no API keys or large ML dependencies.
 
-The interesting design choice: there are no embedding models here. Retrieval is hybrid lexical (BM25 + hashed TF-IDF over numpy), fused with reciprocal rank fusion and a heuristic reranker. That keeps `pip install` under a minute and inference at single-digit milliseconds, while the architecture mirrors what a dense-retrieval system looks like, so upgrading to embeddings later is a clean swap (see Production upgrade path).
+Retrieval is lexical rather than embedding-based: BM25 and hashed TF-IDF (numpy) rankings are combined with reciprocal rank fusion and re-scored by a heuristic reranker. This keeps installation small and queries in the low milliseconds. The interfaces match those of a dense-retrieval system, so embeddings can replace the lexical components later (see [Upgrading to dense retrieval](#upgrading-to-dense-retrieval)).
 
 ## Architecture
 
@@ -58,10 +58,11 @@ Request flow for `POST /ask`:
 3. Retrieved context is PII-redacted before generation, and the final answer is redacted again.
 4. Extractive generation selects and deduplicates the best sentences and attaches numbered citations that resolve to document, section, and source file.
 
-## 60-second quickstart
+## Quickstart
 
 ```bash
-git clone <this-repo> && cd enterprise-rag-pipeline
+git clone https://github.com/koduriabhinay/enterprise-rag-pipeline.git
+cd enterprise-rag-pipeline
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -118,9 +119,9 @@ curl -X POST localhost:8000/ask \
 | context precision | share of retrieved chunks relevant to the question | 0.567 |
 | latency | end-to-end ask time | 2.3 ms |
 
-Read these for what they are: honest proxies, not LLM-judge scores. Faithfulness is 1.000 because extractive answers quote retrieved sentences by construction. Relevance and precision reflect lexical retrieval on a tiny 5-document corpus; they move up with real embeddings (see below). Every metric runs offline in milliseconds, and the harness prints per-question scores so regressions are visible.
+These are lightweight proxy metrics, not LLM-judge scores. Faithfulness is 1.000 because extractive answers quote retrieved sentences by construction. Relevance and precision reflect lexical retrieval on a tiny 5-document corpus; they move up with real embeddings (see below). Every metric runs offline in milliseconds, and the harness prints per-question scores so regressions are visible.
 
-The test suite (`pytest tests/`, 35 tests) covers chunking, RRF fusion, reranking, metadata filters, PII redaction, injection detection, and the metrics themselves.
+The test suite (`pytest tests/`) covers chunking, RRF fusion, reranking, metadata filters, PII redaction, injection detection, and the metrics themselves.
 
 ## Configuration
 
@@ -130,7 +131,7 @@ The test suite (`pytest tests/`, 35 tests) covers chunking, RRF fusion, rerankin
 | `RAG_LLM_API_KEY` | bearer token for the endpoint | unset |
 | `RAG_LLM_MODEL` | model name, e.g. `gpt-4o-mini` | unset |
 
-Abstractive mode is only attempted when all three are set (`python cli.py ask "..." --mode abstractive`); any failure degrades gracefully back to extractive. Retrieval tuning lives in `retrieval/pipeline.py` (`candidate_k`, `rrf_k`, `rerank_pool`) and `retrieval/reranker.py` (signal weights).
+Abstractive mode is only attempted when all three are set (`python cli.py ask "..." --mode abstractive`); on any error it falls back to extractive mode. Retrieval tuning lives in `retrieval/pipeline.py` (`candidate_k`, `rrf_k`, `rerank_pool`) and `retrieval/reranker.py` (signal weights).
 
 ## Project structure
 
@@ -150,12 +151,12 @@ enterprise-rag-pipeline/
   api/           main.py (FastAPI: /ask, /ingest, /stats, /health)
   cli.py         ask / ingest / eval / stats commands
   data_samples/  5 fictional company policies + eval_qa.json (10 questions)
-  tests/         35 pytest tests, all offline
+  tests/         pytest suite, runs offline
 ```
 
-## Production upgrade path
+## Upgrading to dense retrieval
 
-The interfaces are shaped so each lexical component swaps for a neural one without touching the pipeline:
+Each lexical component can be replaced by a neural one without changing the rest of the pipeline:
 
 - `retrieval/tfidf.py` (`HashedTfidfVectorizer.fit/transform`) can be replaced by sentence-transformers bi-encoders; cosine similarity and L2 normalization already match.
 - `retrieval/reranker.py` (`HeuristicReranker.rerank`) takes the same `(query, candidates)` in and scored chunks out as a cross-encoder would.
@@ -169,3 +170,7 @@ The interfaces are shaped so each lexical component swaps for a neural one witho
 - PII patterns target common US formats; they are not exhaustive.
 - The eval metrics are proxies. Faithfulness via word overlap is generous to extractive answers and would need an NLI or LLM judge to be meaningful for abstractive ones.
 - The sample corpus is five short fictional policies; treat the reported numbers as a smoke test, not a benchmark.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
