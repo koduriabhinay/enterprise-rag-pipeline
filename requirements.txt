@@ -1,0 +1,9 @@
+# Direct dependencies (pinned). No torch, no embedding models: retrieval is
+# hashed TF-IDF (numpy) + BM25, so the whole stack installs in seconds.
+fastapi==0.141.1
+uvicorn==0.53.0
+numpy==2.5.3
+rank-bm25==0.2.2
+pypdf==6.18.1
+pytest==9.1.1
+httpx==0.28.1
